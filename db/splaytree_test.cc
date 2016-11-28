@@ -34,10 +34,10 @@ class SplayTest {};
 TEST(SplayTest, Empty) {
   Arena arena;
   Comparator cmp;
-  SplayTree<Key, Comparator> list(cmp, &arena);
-  ASSERT_TRUE(!list.Contains(10));
+  SplayTree<Key, Comparator> tree(cmp, &arena);
+  ASSERT_TRUE(!tree.Contains(10));
 
-  SplayTree<Key, Comparator>::Iterator iter(&list);
+  SplayTree<Key, Comparator>::Iterator iter(&tree);
   ASSERT_TRUE(!iter.Valid());
   iter.SeekToFirst();
   ASSERT_TRUE(!iter.Valid());
@@ -54,16 +54,16 @@ TEST(SplayTest, InsertAndLookup) {
   std::set<Key> keys;
   Arena arena;
   Comparator cmp;
-  SplayTree<Key, Comparator> list(cmp, &arena);
+  SplayTree<Key, Comparator> tree(cmp, &arena);
   for (int i = 0; i < N; i++) {
     Key key = rnd.Next() % R;
     if (keys.insert(key).second) {
-      list.Insert(key);
+      tree.Insert(key);
     }
   }
 
   for (int i = 0; i < R; i++) {
-    if (list.Contains(i)) {
+    if (tree.Contains(i)) {
       ASSERT_EQ(keys.count(i), 1);
     } else {
       ASSERT_EQ(keys.count(i), 0);
@@ -72,7 +72,7 @@ TEST(SplayTest, InsertAndLookup) {
 
   // Simple iterator tests
   {
-    SplayTree<Key, Comparator>::Iterator iter(&list);
+    SplayTree<Key, Comparator>::Iterator iter(&tree);
     ASSERT_TRUE(!iter.Valid());
 
     iter.Seek(0);
@@ -90,7 +90,7 @@ TEST(SplayTest, InsertAndLookup) {
 
   // Forward iteration test
   for (int i = 0; i < R; i++) {
-    SplayTree<Key, Comparator>::Iterator iter(&list);
+    SplayTree<Key, Comparator>::Iterator iter(&tree);
     iter.Seek(i);
 
     // Compare against model iterator
@@ -110,7 +110,7 @@ TEST(SplayTest, InsertAndLookup) {
 
   // Backward iteration test
   {
-    SplayTree<Key, Comparator>::Iterator iter(&list);
+    SplayTree<Key, Comparator>::Iterator iter(&tree);
     iter.SeekToLast();
 
     // Compare against model iterator
@@ -186,17 +186,17 @@ class ConcurrentTest {
 
   // SplayTree is not protected by mu_.  We just use a single writer
   // thread to modify it.
-  SplayTree<Key, Comparator> list_;
+  SplayTree<Key, Comparator> tree_;
 
  public:
-  ConcurrentTest() : list_(Comparator(), &arena_) {}
+  ConcurrentTest() : tree_(Comparator(), &arena_) {}
 
   // REQUIRES: External synchronization
   void WriteStep(Random *rnd) {
     const uint32_t k = rnd->Next() % K;
     const intptr_t g = current_.Get(k) + 1;
     const Key key = MakeKey(k, g);
-    list_.Insert(key);
+    tree_.Insert(key);
     current_.Set(k, g);
   }
 
@@ -207,7 +207,7 @@ class ConcurrentTest {
     }
 
     Key pos = RandomTarget(rnd);
-    SplayTree<Key, Comparator>::Iterator iter(&list_);
+    SplayTree<Key, Comparator>::Iterator iter(&tree_);
     iter.Seek(pos);
     while (true) {
       Key current;

@@ -9,6 +9,7 @@
 #include "leveldb/db.h"
 #include "db/dbformat.h"
 #include "db/skiplist.h"
+#include "db/splaytree.h"
 #include "util/arena.h"
 
 namespace leveldb {
@@ -71,7 +72,8 @@ class MemTable {
   friend class MemTableIterator;
   friend class MemTableBackwardIterator;
 
-  typedef SkipList<const char*, KeyComparator> Table;
+  // typedef SkipList<const char*, KeyComparator> Table;
+  typedef SplayTree<const char*, KeyComparator> Table;
 
   KeyComparator comparator_;
   int refs_;

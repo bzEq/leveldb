@@ -31,6 +31,7 @@ TESTS = \
 	db/log_test \
 	db/recovery_test \
 	db/skiplist_test \
+	db/splaytree_test \
 	db/version_edit_test \
 	db/version_set_test \
 	db/write_batch_test \
@@ -369,6 +370,9 @@ $(STATIC_OUTDIR)/table_test:table/table_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNE
 
 $(STATIC_OUTDIR)/skiplist_test:db/skiplist_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/skiplist_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS) -o $@ $(LIBS)
+
+$(STATIC_OUTDIR)/splaytree_test:db/splaytree_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/splaytree_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS) -o $@ $(LIBS)
 
 $(STATIC_OUTDIR)/version_edit_test:db/version_edit_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/version_edit_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS) -o $@ $(LIBS)

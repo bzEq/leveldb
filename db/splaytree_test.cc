@@ -29,9 +29,9 @@ struct Comparator {
   }
 };
 
-class SkipTest {};
+class SplayTest {};
 
-TEST(SkipTest, Empty) {
+TEST(SplayTest, Empty) {
   Arena arena;
   Comparator cmp;
   SplayTree<Key, Comparator> list(cmp, &arena);
@@ -47,7 +47,7 @@ TEST(SkipTest, Empty) {
   ASSERT_TRUE(!iter.Valid());
 }
 
-TEST(SkipTest, InsertAndLookup) {
+TEST(SplayTest, InsertAndLookup) {
   const int N = 2000;
   const int R = 5000;
   Random rnd(1000);
@@ -124,30 +124,6 @@ TEST(SkipTest, InsertAndLookup) {
   }
 }
 
-// We want to make sure that with a single writer and multiple
-// concurrent readers (with no synchronization other than when a
-// reader's iterator is created), the reader always observes all the
-// data that was present in the skip list when the iterator was
-// constructor.  Because insertions are happening concurrently, we may
-// also observe new values that were inserted since the iterator was
-// constructed, but we should never miss any values that were present
-// at iterator construction time.
-//
-// We generate multi-part keys:
-//     <key,gen,hash>
-// where:
-//     key is in range [0..K-1]
-//     gen is a generation number for key
-//     hash is hash(key,gen)
-//
-// The insertion code picks a random key, sets gen to be 1 + the last
-// generation number inserted for that key, and sets hash to Hash(key,gen).
-//
-// At the beginning of a read, we snapshot the last inserted
-// generation number for each key.  We then iterate, including random
-// calls to Next() and Seek().  For every key we encounter, we
-// check that it is either expected given the initial snapshot or has
-// been concurrently added since the iterator started.
 class ConcurrentTest {
  private:
   static const uint32_t K = 4;
@@ -163,7 +139,7 @@ class ConcurrentTest {
 
   static Key MakeKey(uint64_t k, uint64_t g) {
     assert(sizeof(Key) == sizeof(uint64_t));
-    assert(k <= K);  // We sometimes pass K to seek to the end of the skiplist
+    assert(k <= K);
     assert(g <= 0xffffffffu);
     return ((k << 40) | (g << 8) | (HashNumbers(k, g) & 0xff));
   }
@@ -225,7 +201,6 @@ class ConcurrentTest {
   }
 
   void ReadStep(Random *rnd) {
-    // Remember the initial committed state of the skiplist.
     State initial_state;
     for (int k = 0; k < K; k++) {
       initial_state.Set(k, current_.Get(k));
@@ -285,7 +260,7 @@ const uint32_t ConcurrentTest::K;
 
 // Simple test that does single-threaded testing of the ConcurrentTest
 // scaffolding.
-TEST(SkipTest, ConcurrentWithoutThreads) {
+TEST(SplayTest, ConcurrentWithoutThreads) {
   ConcurrentTest test;
   Random rnd(test::RandomSeed());
   for (int i = 0; i < 10000; i++) {
@@ -358,11 +333,11 @@ static void RunConcurrent(int run) {
   }
 }
 
-TEST(SkipTest, Concurrent1) { RunConcurrent(1); }
-TEST(SkipTest, Concurrent2) { RunConcurrent(2); }
-TEST(SkipTest, Concurrent3) { RunConcurrent(3); }
-TEST(SkipTest, Concurrent4) { RunConcurrent(4); }
-TEST(SkipTest, Concurrent5) { RunConcurrent(5); }
+TEST(SplayTest, Concurrent1) { RunConcurrent(1); }
+TEST(SplayTest, Concurrent2) { RunConcurrent(2); }
+TEST(SplayTest, Concurrent3) { RunConcurrent(3); }
+TEST(SplayTest, Concurrent4) { RunConcurrent(4); }
+TEST(SplayTest, Concurrent5) { RunConcurrent(5); }
 
 }  // namespace leveldb
 

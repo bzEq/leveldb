@@ -200,6 +200,26 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
 
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
+SplayTree<Key, Comparator>::First() {
+  if (root_ && root_->child[kLeft]) {
+    return SubMinimum(root_->child[kLeft]);
+  } else {
+    return root_;
+  }
+}
+
+template <typename Key, typename Comparator>
+inline typename SplayTree<Key, Comparator>::Node *
+SplayTree<Key, Comparator>::Last() {
+  if (root_ && root_->child[kRight]) {
+    return SubMaximum(root_->child[kRight]);
+  } else {
+    return root_;
+  }
+}
+
+template <typename Key, typename Comparator>
+inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::Next(Node *node) {
   // std::unique_lock<std::mutex> _(mu_);
   if (node->child[kRight]) {
@@ -412,11 +432,7 @@ inline void SplayTree<Key, Comparator>::Iterator::Next() {
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::SeekToFirst() {
   std::unique_lock<std::mutex> _(tree_->mu_);
-  if (tree_->root_ && tree_->root_->child[kLeft]) {
-    node_ = tree_->SubMinimum(tree_->root_->child[kLeft]);
-  } else {
-    node_ = tree_->root_;
-  }
+  node_ = tree_->First();
 }
 
 template <typename Key, typename Comparator>
@@ -428,11 +444,7 @@ inline void SplayTree<Key, Comparator>::Iterator::Seek(const Key &target) {
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::SeekToLast() {
   std::unique_lock<std::mutex> _(tree_->mu_);
-  if (tree_->root_ && tree_->root_->child[kRight]) {
-    node_ = tree_->SubMaximum(tree_->root_->child[kRight]);
-  } else {
-    node_ = tree_->root_;
-  }
+  node_ = tree_->Last();
 }
 
 }  // namespace leveldb

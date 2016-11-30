@@ -57,9 +57,9 @@ class SplayTree {
 
   struct Node {
     Node *parent;
-    Node *child[2];
+    std::array<Node *, 2> child;
     Key key;
-    Node(const Key &k) : parent(nullptr), child{nullptr, nullptr}, key(k) {}
+    Node(const Key &k) : parent(nullptr), child{{nullptr, nullptr}}, key(k) {}
     ~Node() {
       delete child[0];
       delete child[1];

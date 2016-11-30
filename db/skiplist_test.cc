@@ -3,19 +3,21 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/skiplist.h"
-#include <set>
 #include "leveldb/env.h"
 #include "util/arena.h"
 #include "util/hash.h"
 #include "util/random.h"
 #include "util/testharness.h"
+#include <chrono>
+#include <iostream>
+#include <set>
 
 namespace leveldb {
 
 typedef uint64_t Key;
 
 struct Comparator {
-  int operator()(const Key& a, const Key& b) const {
+  int operator()(const Key &a, const Key &b) const {
     if (a < b) {
       return -1;
     } else if (a > b) {
@@ -26,7 +28,7 @@ struct Comparator {
   }
 };
 
-class SkipTest { };
+class SkipTest {};
 
 TEST(SkipTest, Empty) {
   Arena arena;
@@ -45,6 +47,7 @@ TEST(SkipTest, Empty) {
 }
 
 TEST(SkipTest, InsertAndLookup) {
+  auto start = std::chrono::high_resolution_clock::now();
   const int N = 2000;
   const int R = 5000;
   Random rnd(1000);
@@ -112,14 +115,16 @@ TEST(SkipTest, InsertAndLookup) {
 
     // Compare against model iterator
     for (std::set<Key>::reverse_iterator model_iter = keys.rbegin();
-         model_iter != keys.rend();
-         ++model_iter) {
+         model_iter != keys.rend(); ++model_iter) {
       ASSERT_TRUE(iter.Valid());
       ASSERT_EQ(*model_iter, iter.key());
       iter.Prev();
     }
     ASSERT_TRUE(!iter.Valid());
   }
+  std::chrono::duration<float> diff =
+      std::chrono::high_resolution_clock::now() - start;
+  std::cout << "time elapse: " << diff.count() << "s\n";
 }
 
 // We want to make sure that with a single writer and multiple
@@ -155,8 +160,8 @@ class ConcurrentTest {
   static uint64_t hash(Key key) { return key & 0xff; }
 
   static uint64_t HashNumbers(uint64_t k, uint64_t g) {
-    uint64_t data[2] = { k, g };
-    return Hash(reinterpret_cast<char*>(data), sizeof(data), 0);
+    uint64_t data[2] = {k, g};
+    return Hash(reinterpret_cast<char *>(data), sizeof(data), 0);
   }
 
   static Key MakeKey(uint64_t k, uint64_t g) {
@@ -170,17 +175,17 @@ class ConcurrentTest {
     return hash(k) == (HashNumbers(key(k), gen(k)) & 0xff);
   }
 
-  static Key RandomTarget(Random* rnd) {
+  static Key RandomTarget(Random *rnd) {
     switch (rnd->Next() % 10) {
-      case 0:
-        // Seek to beginning
-        return MakeKey(0, 0);
-      case 1:
-        // Seek to end
-        return MakeKey(K, 0);
-      default:
-        // Seek to middle
-        return MakeKey(rnd->Next() % K, 0);
+    case 0:
+      // Seek to beginning
+      return MakeKey(0, 0);
+    case 1:
+      // Seek to end
+      return MakeKey(K, 0);
+    default:
+      // Seek to middle
+      return MakeKey(rnd->Next() % K, 0);
     }
   }
 
@@ -188,7 +193,7 @@ class ConcurrentTest {
   struct State {
     port::AtomicPointer generation[K];
     void Set(int k, intptr_t v) {
-      generation[k].Release_Store(reinterpret_cast<void*>(v));
+      generation[k].Release_Store(reinterpret_cast<void *>(v));
     }
     intptr_t Get(int k) {
       return reinterpret_cast<intptr_t>(generation[k].Acquire_Load());
@@ -211,10 +216,10 @@ class ConcurrentTest {
   SkipList<Key, Comparator> list_;
 
  public:
-  ConcurrentTest() : list_(Comparator(), &arena_) { }
+  ConcurrentTest() : list_(Comparator(), &arena_) {}
 
   // REQUIRES: External synchronization
-  void WriteStep(Random* rnd) {
+  void WriteStep(Random *rnd) {
     const uint32_t k = rnd->Next() % K;
     const intptr_t g = current_.Get(k) + 1;
     const Key key = MakeKey(k, g);
@@ -222,7 +227,7 @@ class ConcurrentTest {
     current_.Set(k, g);
   }
 
-  void ReadStep(Random* rnd) {
+  void ReadStep(Random *rnd) {
     // Remember the initial committed state of the skiplist.
     State initial_state;
     for (int k = 0; k < K; k++) {
@@ -250,11 +255,9 @@ class ConcurrentTest {
         // Note that generation 0 is never inserted, so it is ok if
         // <*,0,*> is missing.
         ASSERT_TRUE((gen(pos) == 0) ||
-                    (gen(pos) > static_cast<Key>(initial_state.Get(key(pos))))
-                    ) << "key: " << key(pos)
-                      << "; gen: " << gen(pos)
-                      << "; initgen: "
-                      << initial_state.Get(key(pos));
+                    (gen(pos) > static_cast<Key>(initial_state.Get(key(pos)))))
+            << "key: " << key(pos) << "; gen: " << gen(pos)
+            << "; initgen: " << initial_state.Get(key(pos));
 
         // Advance to next key in the valid key space
         if (key(pos) < key(current)) {
@@ -300,17 +303,10 @@ class TestState {
   int seed_;
   port::AtomicPointer quit_flag_;
 
-  enum ReaderState {
-    STARTING,
-    RUNNING,
-    DONE
-  };
+  enum ReaderState { STARTING, RUNNING, DONE };
 
   explicit TestState(int s)
-      : seed_(s),
-        quit_flag_(NULL),
-        state_(STARTING),
-        state_cv_(&mu_) {}
+      : seed_(s), quit_flag_(NULL), state_(STARTING), state_cv_(&mu_) {}
 
   void Wait(ReaderState s) {
     mu_.Lock();
@@ -333,8 +329,8 @@ class TestState {
   port::CondVar state_cv_;
 };
 
-static void ConcurrentReader(void* arg) {
-  TestState* state = reinterpret_cast<TestState*>(arg);
+static void ConcurrentReader(void *arg) {
+  TestState *state = reinterpret_cast<TestState *>(arg);
   Random rnd(state->seed_);
   int64_t reads = 0;
   state->Change(TestState::RUNNING);
@@ -373,6 +369,4 @@ TEST(SkipTest, Concurrent5) { RunConcurrent(5); }
 
 }  // namespace leveldb
 
-int main(int argc, char** argv) {
-  return leveldb::test::RunAllTests();
-}
+int main(int argc, char **argv) { return leveldb::test::RunAllTests(); }

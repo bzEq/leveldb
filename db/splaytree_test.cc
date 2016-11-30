@@ -9,8 +9,8 @@
 #include "util/hash.h"
 #include "util/random.h"
 #include "util/testharness.h"
-
-#include <mutex>
+#include <chrono>
+#include <iostream>
 #include <set>
 
 namespace leveldb {
@@ -48,6 +48,7 @@ TEST(SplayTest, Empty) {
 }
 
 TEST(SplayTest, InsertAndLookup) {
+  auto start = std::chrono::high_resolution_clock::now();
   const int N = 2000;
   const int R = 5000;
   Random rnd(1000);
@@ -122,6 +123,9 @@ TEST(SplayTest, InsertAndLookup) {
     }
     ASSERT_TRUE(!iter.Valid());
   }
+  std::chrono::duration<float> diff =
+      std::chrono::high_resolution_clock::now() - start;
+  std::cout << "time elapse: " << diff.count() << "s\n";
 }
 
 class ConcurrentTest {

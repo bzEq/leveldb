@@ -112,14 +112,54 @@ class CondVar {
 
 class RWLock {
  public:
-  RWLock() { pthread_rwlock_init(&lock_, nullptr); }
-  void RLock() { pthread_rwlock_rdlock(&lock_); }
-  void WLock() { pthread_rwlock_wrlock(&lock_); }
-  void RUnlock() { pthread_rwlock_unlock(&lock_); }
-  void WUnlock() { pthread_rwlock_unlock(&lock_); }
+  RWLock() : r_(0), w_(0), write_(0), read_(0) {
+    // pthread_rwlock_init(&lock_, nullptr);
+  }
+  void RLock() {
+    // pthread_rwlock_rdlock(&lock_);
+    while (true) {
+      while (write_) {
+        __sync_synchronize();
+      }
+      __sync_add_and_fetch(&read_, 1);
+      if (write_) {
+        __sync_sub_and_fetch(&read_, 1);
+      } else {
+        break;
+      }
+    }
+    ++r_;
+  }
+
+  void WLock() {
+    // pthread_rwlock_wrlock(&lock_);
+    while (__sync_lock_test_and_set(&write_, 1)) {
+    }
+    while (read_) {
+      __sync_synchronize();
+    }
+    ++w_;
+  }
+
+  void RUnlock() {
+    --r_;
+    // pthread_rwlock_unlock(&lock_);
+    __sync_sub_and_fetch(&read_, 1);
+  }
+
+  void WUnlock() {
+    --w_;
+    // pthread_rwlock_unlock(&lock_);
+    __sync_lock_release(&write_);
+  }
+
+  int NumOfReaders() { return r_; }
+  int NumOfWriters() { return w_; }
   ~RWLock() { pthread_rwlock_destroy(&lock_); }
 
  private:
+  std::atomic<int> r_, w_;
+  int write_, read_;
   pthread_rwlock_t lock_;
 };
 

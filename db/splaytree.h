@@ -7,6 +7,8 @@
 #ifndef STORAGE_LEVELDB_DB_SPLAYTREE_H_
 #define STORAGE_LEVELDB_DB_SPLAYTREE_H_
 #include <assert.h>
+#include <atomic>
+#include <iostream>
 #include <mutex>
 #include <stdlib.h>
 
@@ -30,6 +32,10 @@ class SplayTree {
   bool Delete(const Key &key);
   bool Contains(const Key &key) const;
   size_t Size() const { return size_; }
+  // bool CheckBinary() {
+  //   port::RWLockRDGuard _(&rwlock_);
+  //   return CheckBinary(root_);
+  // }
   ~SplayTree() { delete root_; }
 
   class Iterator {
@@ -56,10 +62,13 @@ class SplayTree {
   };
 
   struct Node {
-    Node *parent;
-    std::array<Node *, 2> child;
-    Key key;
-    Node(const Key &k) : parent(nullptr), child{{nullptr, nullptr}}, key(k) {}
+    std::atomic<Node *> parent;
+    std::array<std::atomic<Node *>, 2> child;
+    const Key key;
+    Node(const Key &k) : parent(nullptr), key(k) {
+      child[0].store(nullptr);
+      child[1].store(nullptr);
+    }
     ~Node() {
       delete child[0];
       delete child[1];
@@ -68,73 +77,84 @@ class SplayTree {
 
   void Collect(Node *n);
 
-  Node *SubMinimum(Node *n);
+  Node *UnlockSubMinimum(Node *n);
 
-  Node *SubMaximum(Node *n);
+  Node *UnlockSubMaximum(Node *n);
 
-  Node *Find(const Key &key) const;
+  Node *UnlockFind(const Key &key) const;
   Node *FindGreaterOrEqual(const Key &key);
+  Node *UnlockFindGreaterOrEqual(const Key &key);
 
   Node *Prev(Node *n);
   Node *Next(Node *n);
+  Node *UnlockNext(Node *n);
   Node *First();
   Node *Last();
 
   void Splay(Node *n);
 
   void Rotate(Node *n, NodeSide s);
+  // bool CheckBinary(Node *node) {
+  //   if (!node) {
+  //     return true;
+  //   }
+  //   if (node->child[0]) {
+  //     assert(node->child[0].load()->key <= node->key);
+  //   }
+  //   if (node->child[1]) {
+  //     assert(node->child[1].load()->key > node->key);
+  //   }
+  //   return CheckBinary(node->child[0]) | CheckBinary(node->child[1]);
+  // }
 
   Comparator comparator_;
-  Node *root_;
-  size_t size_;
+  std::atomic<Node *> root_;
+  std::atomic<size_t> size_;
   Arena *arena_;
-  mutable std::mutex mu_;
+  mutable port::RWLock rwlock_;
 };
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Insert(const Key &key) {
-  std::unique_lock<std::mutex> _(mu_);
-  if (!root_) {
-    root_ = new Node(key);
-    ++size_;
-    return;
-  }
-  Node *current = root_;
-  Node *parent = current->parent;
+  Node *nil = nullptr;
+  Node *insert = new Node(key);
+
+  // port::RWLockRDGuard insert_guard(&rwlock_);
+  port::RWLockWRGuard insert_guard(&rwlock_);
+  auto current = &root_;
   NodeSide side;
-  assert(!parent);
-  while (current) {
-    parent = current;
-    if (comparator_(key, current->key) == 0) {
+  assert(!insert->parent.load());
+  while (!current->compare_exchange_strong(nil, insert)) {
+    nil = nullptr;
+    insert->parent = current->load();
+    if (comparator_(key, current->load()->key) == 0) {
+      delete insert;
       return;
     }
-    if (comparator_(current->key, key) < 0) {
+    if (comparator_(current->load()->key, key) < 0) {
       side = kRight;
-      current = current->child[kRight];
+      current = &(current->load()->child[kRight]);
     } else {
       side = kLeft;
-      current = current->child[kLeft];
+      current = &(current->load()->child[kLeft]);
     }
   }
-  current = new Node(key);
-  current->parent = parent;
-  if (!parent) {
-    root_ = current;
-  } else {
-    parent->child[side] = current;
-  }
-
-  Splay(current);
-  assert(root_ == current);
-  assert(root_->parent == nullptr);
-
   ++size_;
+  insert_guard.Unlock();
+
+  port::RWLockWRGuard splay_guard(&rwlock_);
+  assert(current->load() == insert);
+  assert(rwlock_.NumOfReaders() == 0);
+  assert(rwlock_.NumOfWriters() == 1);
+  Splay(insert);
+  assert(root_.load() == insert);
+  assert(root_.load()->parent == nullptr);
 }
 
 template <typename Key, typename Comparator>
 inline bool SplayTree<Key, Comparator>::Contains(const Key &key) const {
-  std::unique_lock<std::mutex> _(mu_);
-  return Find(key) != nullptr;
+  port::RWLockRDGuard _(&rwlock_);
+  return UnlockFind(key) != nullptr;
 }
 
 template <typename Key, typename Comparator>
@@ -143,6 +163,8 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
   if (!n) {
     return false;
   }
+
+  port::RWLockWRGuard delete_guard(&rwlock_);
   Splay(n);
   assert(root_ == n);
   assert(n->parent == nullptr);
@@ -159,7 +181,7 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
     }
     Collect(n);
   } else {
-    Node *c = SubMinimum(n->child[kRight]);
+    Node *c = UnlockSubMinimum(n->child[kRight]);
     if (c->parent == n) {
       assert(n->child[kRight] == c);
       assert(c->child[kLeft] == nullptr);
@@ -201,35 +223,43 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::First() {
-  if (root_ && root_->child[kLeft]) {
-    return SubMinimum(root_->child[kLeft]);
+  port::RWLockRDGuard _(&rwlock_);
+  if (root_.load() && root_.load()->child[kLeft]) {
+    return UnlockSubMinimum(root_.load()->child[kLeft]);
   } else {
-    return root_;
+    return root_.load();
   }
 }
 
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::Last() {
-  if (root_ && root_->child[kRight]) {
-    return SubMaximum(root_->child[kRight]);
+  port::RWLockRDGuard _(&rwlock_);
+  if (root_.load() && root_.load()->child[kRight]) {
+    return UnlockSubMaximum(root_.load()->child[kRight]);
   } else {
-    return root_;
+    return root_.load();
   }
 }
 
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::Next(Node *node) {
-  // std::unique_lock<std::mutex> _(mu_);
+  port::RWLockRDGuard _(&rwlock_);
+  return UnlockNext(node);
+}
+
+template <typename Key, typename Comparator>
+inline typename SplayTree<Key, Comparator>::Node *
+SplayTree<Key, Comparator>::UnlockNext(Node *node) {
   if (node->child[kRight]) {
-    return SubMinimum(node->child[kRight]);
+    return UnlockSubMinimum(node->child[kRight]);
   }
-  if (node->parent && node == node->parent->child[kLeft]) {
+  if (node->parent && node == node->parent.load()->child[kLeft]) {
     return node->parent;
   }
   while (node->parent) {
-    if (node == node->parent->child[kLeft]) {
+    if (node == node->parent.load()->child[kLeft]) {
       break;
     }
     node = node->parent;
@@ -240,15 +270,15 @@ SplayTree<Key, Comparator>::Next(Node *node) {
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::Prev(Node *node) {
-  // std::unique_lock<std::mutex> _(mu_);
+  port::RWLockRDGuard _(&rwlock_);
   if (node->child[kLeft]) {
-    return SubMaximum(node->child[kLeft]);
+    return UnlockSubMaximum(node->child[kLeft]);
   }
-  if (node->parent && node == node->parent->child[kRight]) {
+  if (node->parent && node == node->parent.load()->child[kRight]) {
     return node->parent;
   }
   while (node->parent) {
-    if (node == node->parent->child[kRight]) {
+    if (node == node->parent.load()->child[kRight]) {
       break;
     }
     node = node->parent;
@@ -259,7 +289,14 @@ SplayTree<Key, Comparator>::Prev(Node *node) {
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::FindGreaterOrEqual(const Key &key) {
-  // std::unique_lock<std::mutex> _(mu_);
+  port::RWLockRDGuard _(&rwlock_);
+  assert(rwlock_.NumOfWriters() == 0);
+  return UnlockFindGreaterOrEqual(key);
+}
+
+template <typename Key, typename Comparator>
+inline typename SplayTree<Key, Comparator>::Node *
+SplayTree<Key, Comparator>::UnlockFindGreaterOrEqual(const Key &key) {
   Node *current = root_;
   Node *prev = nullptr;
   while (current) {
@@ -282,13 +319,12 @@ SplayTree<Key, Comparator>::FindGreaterOrEqual(const Key &key) {
   if (comparator_(key, prev->key) < 0) {
     return prev;
   }
-  return Next(prev);
+  return UnlockNext(prev);
 }
 
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
-SplayTree<Key, Comparator>::Find(const Key &key) const {
-  // std::unique_lock<std::mutex> _(mu_);
+SplayTree<Key, Comparator>::UnlockFind(const Key &key) const {
   Node *current = root_;
   while (current) {
     if (current->key == key) {
@@ -305,7 +341,8 @@ SplayTree<Key, Comparator>::Find(const Key &key) const {
 
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
-SplayTree<Key, Comparator>::SubMinimum(SplayTree<Key, Comparator>::Node *n) {
+SplayTree<Key, Comparator>::UnlockSubMinimum(
+    SplayTree<Key, Comparator>::Node *n) {
   while (n->child[kLeft]) {
     n = n->child[kLeft];
   }
@@ -314,7 +351,8 @@ SplayTree<Key, Comparator>::SubMinimum(SplayTree<Key, Comparator>::Node *n) {
 
 template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
-SplayTree<Key, Comparator>::SubMaximum(SplayTree<Key, Comparator>::Node *n) {
+SplayTree<Key, Comparator>::UnlockSubMaximum(
+    SplayTree<Key, Comparator>::Node *n) {
   while (n->child[kRight]) {
     n = n->child[kRight];
   }
@@ -325,28 +363,28 @@ template <typename Key, typename Comparator>
 inline void
 SplayTree<Key, Comparator>::Splay(SplayTree<Key, Comparator>::Node *n) {
   while (n->parent) {
-    if (!n->parent->parent) {
-      if (n == n->parent->child[kLeft]) {
+    if (!n->parent.load()->parent) {
+      if (n == n->parent.load()->child[kLeft]) {
         Rotate(n->parent, kLeft);
       } else {
-        assert(n == n->parent->child[kRight]);
+        assert(n == n->parent.load()->child[kRight]);
         Rotate(n->parent, kRight);
       }
-    } else if (n == n->parent->child[kLeft] &&
-               n->parent == n->parent->parent->child[kLeft]) {
-      Rotate(n->parent->parent, kLeft);
+    } else if (n == n->parent.load()->child[kLeft] &&
+               n->parent == n->parent.load()->parent.load()->child[kLeft]) {
+      Rotate(n->parent.load()->parent, kLeft);
       Rotate(n->parent, kLeft);
-    } else if (n == n->parent->child[kRight] &&
-               n->parent == n->parent->parent->child[kRight]) {
-      Rotate(n->parent->parent, kRight);
+    } else if (n == n->parent.load()->child[kRight] &&
+               n->parent == n->parent.load()->parent.load()->child[kRight]) {
+      Rotate(n->parent.load()->parent, kRight);
       Rotate(n->parent, kRight);
-    } else if (n == n->parent->child[kLeft] &&
-               n->parent == n->parent->parent->child[kRight]) {
+    } else if (n == n->parent.load()->child[kLeft] &&
+               n->parent == n->parent.load()->parent.load()->child[kRight]) {
       Rotate(n->parent, kLeft);
       Rotate(n->parent, kRight);
     } else {
-      assert(n == n->parent->child[kRight] &&
-             n->parent == n->parent->parent->child[kLeft]);
+      assert(n == n->parent.load()->child[kRight] &&
+             n->parent == n->parent.load()->parent.load()->child[kLeft]);
       Rotate(n->parent, kRight);
       Rotate(n->parent, kLeft);
     }
@@ -362,19 +400,19 @@ SplayTree<Key, Comparator>::Rotate(SplayTree<Key, Comparator>::Node *n,
   if (!c) {
     return;
   }
-  n->child[s] = c->child[os];
+  n->child[s].store(c->child[os].load());
   if (c->child[os]) {
-    c->child[os]->parent = n;
+    c->child[os].load()->parent = n;
   }
-  c->parent = n->parent;
+  c->parent.store(n->parent.load());
   if (!n->parent) {
     assert(root_ == n);
     root_ = c;
-  } else if (n->parent->child[kLeft] == n) {
-    n->parent->child[kLeft] = c;
+  } else if (n->parent.load()->child[kLeft] == n) {
+    n->parent.load()->child[kLeft] = c;
   } else {
-    assert(n->parent->child[kRight] == n);
-    n->parent->child[kRight] = c;
+    assert(n->parent.load()->child[kRight] == n);
+    n->parent.load()->child[kRight] = c;
   }
   c->child[os] = n;
   n->parent = c;
@@ -398,52 +436,37 @@ inline SplayTree<Key, Comparator>::Iterator::Iterator(
 }
 
 template <typename Key, typename Comparator>
-inline const Key &SplayTree<Key, Comparator>::Iterator::operator*() const {
-  std::unique_lock<std::mutex> _(tree_->mu_);
-  assert(node_);
-  return node_->key;
-}
-
-template <typename Key, typename Comparator>
 inline const Key &SplayTree<Key, Comparator>::Iterator::key() const {
-  std::unique_lock<std::mutex> _(tree_->mu_);
-  assert(node_);
   return node_->key;
 }
 
 template <typename Key, typename Comparator>
 inline bool SplayTree<Key, Comparator>::Iterator::Valid() const {
-  std::unique_lock<std::mutex> _(tree_->mu_);
   return node_ != nullptr;
 }
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::Prev() {
-  std::unique_lock<std::mutex> _(tree_->mu_);
   node_ = tree_->Prev(node_);
 }
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::Next() {
-  std::unique_lock<std::mutex> _(tree_->mu_);
   node_ = tree_->Next(node_);
 }
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::SeekToFirst() {
-  std::unique_lock<std::mutex> _(tree_->mu_);
   node_ = tree_->First();
 }
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::Seek(const Key &target) {
-  std::unique_lock<std::mutex> _(tree_->mu_);
   node_ = tree_->FindGreaterOrEqual(target);
 }
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Iterator::SeekToLast() {
-  std::unique_lock<std::mutex> _(tree_->mu_);
   node_ = tree_->Last();
 }
 

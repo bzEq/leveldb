@@ -140,9 +140,7 @@ inline void SplayTree<Key, Comparator>::Insert(const Key &key) {
     }
   }
   ++size_;
-  insert_guard.Unlock();
 
-  port::RWLockWRGuard splay_guard(&rwlock_);
   assert(current->load() == insert);
   assert(rwlock_.NumOfReaders() == 0);
   assert(rwlock_.NumOfWriters() == 1);

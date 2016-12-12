@@ -64,10 +64,15 @@ class SplayTree {
   struct Node {
     std::atomic<Node *> parent;
     std::array<std::atomic<Node *>, 2> child;
+    // helper pointer to assist iteration
+    std::atomic<Node *> ancestor_prev;
+    std::atomic<Node *> ancestor_next;
     const Key key;
     Node(const Key &k) : parent(nullptr), key(k) {
       child[0].store(nullptr);
       child[1].store(nullptr);
+      ancestor_prev.store(nullptr);
+      ancestor_next.store(nullptr);
     }
     ~Node() {
       delete child[0];
@@ -133,14 +138,20 @@ inline void SplayTree<Key, Comparator>::Insert(const Key &key) {
     }
     if (comparator_(current->load()->key, key) < 0) {
       side = kRight;
+      insert->ancestor_next = current->load()->ancestor_next.load();
+      insert->ancestor_prev = current->load();
       current = &(current->load()->child[kRight]);
     } else {
       side = kLeft;
+      insert->ancestor_next = current->load();
+      insert->ancestor_prev = current->load()->ancestor_prev.load();
       current = &(current->load()->child[kLeft]);
     }
   }
   ++size_;
+  insert_guard.Unlock();
 
+  port::RWLockWRGuard splay_guard(&rwlock_);
   assert(current->load() == insert);
   assert(rwlock_.NumOfReaders() == 0);
   assert(rwlock_.NumOfWriters() == 1);
@@ -251,18 +262,10 @@ template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::UnlockNext(Node *node) {
   if (node->child[kRight]) {
-    return UnlockSubMinimum(node->child[kRight]);
+    return UnlockSubMinimum(node->child[kRight].load());
+  } else {
+    return node->ancestor_next;
   }
-  if (node->parent && node == node->parent.load()->child[kLeft]) {
-    return node->parent;
-  }
-  while (node->parent) {
-    if (node == node->parent.load()->child[kLeft]) {
-      break;
-    }
-    node = node->parent;
-  }
-  return node->parent;
 }
 
 template <typename Key, typename Comparator>
@@ -411,6 +414,13 @@ SplayTree<Key, Comparator>::Rotate(SplayTree<Key, Comparator>::Node *n,
   } else {
     assert(n->parent.load()->child[kRight] == n);
     n->parent.load()->child[kRight] = c;
+  }
+  if (s == kLeft) {
+    c->ancestor_next = n->ancestor_next.load();
+    n->ancestor_prev = c;
+  } else {
+    n->ancestor_next = c;
+    c->ancestor_prev = n->ancestor_prev.load();
   }
   c->child[os] = n;
   n->parent = c;

@@ -140,11 +140,9 @@ class RWLock {
   void WUnlock() { __sync_lock_release(&write_); }
 
   int NumOfReaders() {
-    __sync_synchronize();
     return read_;
   }
   int NumOfWriters() {
-    __sync_synchronize();
     return write_;
   }
   ~RWLock() {}

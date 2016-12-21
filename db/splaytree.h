@@ -64,17 +64,15 @@ class SplayTree {
   struct Node {
     bool inserted;
     Node *parent;
-    std::array<std::atomic<Node *>, 2> child;
+    std::array<Node *, 2> child;
     // helper pointer to assist iteration
     Node *ancestor_prev;
     Node *ancestor_next;
     const Key key;
     Node(const Key &k)
-        : inserted(false), parent(nullptr), key(k), ancestor_prev(nullptr),
-          ancestor_next(nullptr) {
-      child[0].store(nullptr);
-      child[1].store(nullptr);
-    }
+        : inserted(false), parent(nullptr), child{{nullptr, nullptr}}, key(k),
+          ancestor_prev(nullptr), ancestor_next(nullptr) {}
+
     ~Node() {
       delete child[0];
       delete child[1];
@@ -114,7 +112,7 @@ class SplayTree {
   // }
 
   Comparator comparator_;
-  std::atomic<Node *> root_;
+  Node *root_;
   size_t size_;
   Arena *arena_;
   mutable port::RWLock rwlock_;
@@ -130,23 +128,24 @@ inline void SplayTree<Key, Comparator>::Insert(const Key &key) {
   auto current = &root_;
   NodeSide side;
   assert(!insert->parent);
-  while (!current->compare_exchange_strong(nil, insert)) {
+  while (!__sync_bool_compare_and_swap(current, nil, insert)) {
+    // while (!current->compare_exchange_strong(nil, insert)) {
     nil = nullptr;
-    insert->parent = current->load();
-    if (comparator_(key, current->load()->key) == 0) {
+    insert->parent = *current;
+    if (comparator_(key, (*current)->key) == 0) {
       delete insert;
       return;
     }
-    if (comparator_(current->load()->key, key) < 0) {
+    if (comparator_((*current)->key, key) < 0) {
       side = kRight;
-      insert->ancestor_next = current->load()->ancestor_next;
-      insert->ancestor_prev = current->load();
-      current = &(current->load()->child[kRight]);
+      insert->ancestor_next = (*current)->ancestor_next;
+      insert->ancestor_prev = *current;
+      current = &((*current)->child[kRight]);
     } else {
       side = kLeft;
-      insert->ancestor_next = current->load();
-      insert->ancestor_prev = current->load()->ancestor_prev;
-      current = &(current->load()->child[kLeft]);
+      insert->ancestor_next = *current;
+      insert->ancestor_prev = (*current)->ancestor_prev;
+      current = &((*current)->child[kLeft]);
     }
   }
   ++size_;
@@ -232,8 +231,8 @@ template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::First() {
   port::RWLockRDGuard _(&rwlock_);
-  if (root_.load() && root_.load()->child[kLeft]) {
-    return UnlockSubMinimum(root_.load()->child[kLeft]);
+  if (root_ && root_->child[kLeft]) {
+    return UnlockSubMinimum(root_->child[kLeft]);
   } else {
     return root_;
   }
@@ -243,8 +242,8 @@ template <typename Key, typename Comparator>
 inline typename SplayTree<Key, Comparator>::Node *
 SplayTree<Key, Comparator>::Last() {
   port::RWLockRDGuard _(&rwlock_);
-  if (root_.load() && root_.load()->child[kRight]) {
-    return UnlockSubMaximum(root_.load()->child[kRight]);
+  if (root_ && root_->child[kRight]) {
+    return UnlockSubMaximum(root_->child[kRight]);
   } else {
     return root_;
   }
@@ -409,9 +408,9 @@ SplayTree<Key, Comparator>::Rotate(SplayTree<Key, Comparator>::Node *n,
   if (!c) {
     return;
   }
-  n->child[s].store(c->child[os].load());
+  n->child[s] = c->child[os];
   if (c->child[os]) {
-    c->child[os].load()->parent = n;
+    c->child[os]->parent = n;
   }
   c->parent = n->parent;
   if (!n->parent) {

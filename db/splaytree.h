@@ -22,10 +22,10 @@ class Arena;
 
 template <typename Key, typename Comparator>
 class SplayTree {
- private:
+private:
   struct Node;
 
- public:
+public:
   explicit SplayTree(Comparator cmp, Arena *arena)
       : comparator_(cmp), root_(nullptr), size_(0), arena_(arena) {}
   void Insert(const Key &key);
@@ -35,7 +35,7 @@ class SplayTree {
   ~SplayTree() { delete root_; }
 
   class Iterator {
-   public:
+  public:
     explicit Iterator(SplayTree *);
     const Key &operator*() const;
     const Key &key() const;
@@ -46,12 +46,12 @@ class SplayTree {
     void SeekToFirst();
     void SeekToLast();
 
-   private:
+  private:
     SplayTree *tree_;
     Node *node_;
   };
 
- private:
+private:
   enum NodeSide {
     kLeft,
     kRight,
@@ -164,12 +164,18 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
     root_ = n->child[kRight];
     if (root_) {
       root_->parent = nullptr;
+      assert(root_->ancestor_prev == n);
+      root_->ancestor_prev = nullptr;
+      assert(root_->ancestor_next == nullptr);
     }
     Collect(n);
   } else if (!n->child[kRight]) {
     root_ = n->child[kLeft];
     if (root_) {
       root_->parent = nullptr;
+      assert(root_->ancestor_next == n);
+      root_->ancestor_next = nullptr;
+      assert(root_->ancestor_prev == nullptr);
     }
     Collect(n);
   } else {
@@ -180,7 +186,10 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
       c->child[kLeft] = n->child[kLeft];
       // assert(c->child[kLeft]);
       c->child[kLeft]->parent = c;
-      c->parent = n->parent;
+      assert(n->parent == nullptr);
+      c->parent = nullptr;
+      assert(c->ancestor_prev == n);
+      c->ancestor_prev = nullptr;
       Collect(n);
     } else {
       // assert(c->parent->child[kLeft] == c);
@@ -190,15 +199,18 @@ inline bool SplayTree<Key, Comparator>::Delete(const Key &key) {
         c->child[kRight]->parent = c->parent;
       }
       assert(n->parent == nullptr);
-
-      c->parent = n->parent;
+      c->parent = nullptr;
 
       c->child[kRight] = n->child[kRight];
       c->child[kRight]->parent = c;
+      assert(c->child[kRight]->ancestor_prev == n);
+      c->child[kRight]->ancestor_prev = c;
       // assert(c->child[kRight]->parent == c);
 
       c->child[kLeft] = n->child[kLeft];
       c->child[kLeft]->parent = c;
+      assert(c->child[kLeft]->ancestor_next == n);
+      c->child[kLeft]->ancestor_next = c;
       // assert(c->child[kLeft]->parent == c);
 
       Collect(n);

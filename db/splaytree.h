@@ -105,15 +105,13 @@ class SplayTree {
 
 template <typename Key, typename Comparator>
 inline void SplayTree<Key, Comparator>::Insert(const Key &key) {
-  Node *nil = nullptr;
   Node *insert = new Node(key);
 
   port::RWLockRDGuard insert_guard(&rwlock_);
   auto current = &root_;
   NodeSide side;
   assert(!insert->parent);
-  while (!__sync_bool_compare_and_swap(current, nil, insert)) {
-    nil = nullptr;
+  while (*current) {
     insert->parent = *current;
     if (comparator_(key, (*current)->key) == 0) {
       delete insert;
@@ -131,6 +129,7 @@ inline void SplayTree<Key, Comparator>::Insert(const Key &key) {
       current = &((*current)->child[kLeft]);
     }
   }
+  *current = insert;
   insert_guard.Unlock();
 
   port::RWLockWRGuard splay_guard(&rwlock_);

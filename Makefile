@@ -31,6 +31,7 @@ TESTS = \
 	db/log_test \
 	db/recovery_test \
 	db/skiplist_test \
+	db/ziptree_test \
 	db/version_edit_test \
 	db/version_set_test \
 	db/write_batch_test \
@@ -61,7 +62,7 @@ BENCHMARKS = \
 	doc/bench/db_bench_tree_db
 
 CFLAGS += -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
-CXXFLAGS += -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT)
+CXXFLAGS += -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -std=c++17
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 LIBS += $(PLATFORM_LIBS)
@@ -373,6 +374,9 @@ $(STATIC_OUTDIR)/table_test:table/table_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNE
 
 $(STATIC_OUTDIR)/skiplist_test:db/skiplist_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/skiplist_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS) -o $@ $(LIBS)
+
+$(STATIC_OUTDIR)/ziptree_test:db/ziptree_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS)
+	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/ziptree_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS) -o $@ $(LIBS)
 
 $(STATIC_OUTDIR)/version_edit_test:db/version_edit_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/version_edit_test.cc $(STATIC_LIBOBJECTS) $(TESTHARNESS) -o $@ $(LIBS)

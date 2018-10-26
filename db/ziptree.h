@@ -34,7 +34,7 @@ class ZipTree {
   };
 
  private:
-  enum { kMaxRank = 10 };
+  enum { kMaxRank = 11 };
 
   Node* Find(const Key& key) const {
     Node* current = root_;
@@ -91,7 +91,7 @@ class ZipTree {
   }
 
   int RandomRank() {
-    static const unsigned int kBranching = 2;
+    static const unsigned int kBranching = 6;
     int rank = 0;
     while (rnd_.Next() % kBranching == 0 && rank < kMaxRank) {
       ++rank;

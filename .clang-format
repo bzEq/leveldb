@@ -1,0 +1,5 @@
+BasedOnStyle: google
+SortIncludes: true
+AlwaysBreakTemplateDeclarations: true
+MaxEmptyLinesToKeep: 1
+DerivePointerAlignment: false
